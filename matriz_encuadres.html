@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador Analítico - Homicidios Juveniles Santa Fe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- DATOS: separados en archivo aparte. Para actualizar el corpus, editar matriz_data.js -->
+    <script src="matriz_data.js"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col">
+
+    <header class="bg-slate-950 border-b border-slate-800 p-4 sticky top-0 z-50 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold text-sky-400">Representaciones Mediáticas de la Violencia</h1>
+                <p class="text-xs text-slate-400">Análisis Empírico de Encuadres de Prensa (2001 - 2004) | Santa Fe</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="abrirMetodologia()" class="text-xs font-semibold text-slate-400 hover:text-sky-400 border border-slate-800 hover:border-sky-800 px-3 py-1.5 rounded transition">
+                    ℹ Nota metodológica ↗
+                </button>
+                <div id="counter" class="bg-sky-950/50 border border-sky-800 text-sky-400 px-3 py-1 rounded-full text-sm font-semibold">
+                    Cargando datos...
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- PANEL DE VALIDACIÓN — silencioso, solo aparece si hay algo que revisar -->
+    <div id="validation-panel" class="hidden bg-slate-900/60 border-b border-slate-800 px-4 py-2">
+        <div class="container mx-auto flex items-start justify-between gap-3">
+            <div class="flex-1">
+                <button id="validation-toggle" onclick="toggleValidationDetails()" class="text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-2">
+                    <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[9px]">i</span>
+                    <span id="validation-summary">Revisando datos...</span>
+                    <span id="validation-caret">▾</span>
+                </button>
+                <div id="validation-details" class="hidden mt-2 text-xs text-slate-400 space-y-1"></div>
+            </div>
+            <button onclick="document.getElementById('validation-panel').classList.add('hidden')" class="text-slate-600 hover:text-slate-400 text-xs">✕</button>
+        </div>
+    </div>
+
+    <div class="flex flex-1 flex-col lg:flex-row overflow-hidden">
+
+        <aside class="w-full lg:w-80 bg-slate-950 border-r border-slate-800 p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+            <div class="flex justify-between items-center pb-2 border-b border-slate-800">
+                <h2 class="font-bold text-slate-200 uppercase text-xs tracking-wider">Filtros Avanzados</h2>
+                <button onclick="resetFilters()" class="text-xs text-rose-400 hover:text-rose-300 font-semibold transition">Limpiar</button>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Estado de Cobertura</label>
+                <select id="filter-cobertura" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los casos</option>
+                    <option value="con">Con cobertura periodística</option>
+                    <option value="sin">Sin cobertura (S/C)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Año</label>
+                <select id="filter-year" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los años</option>
+                    <option value="2001">2001</option>
+                    <option value="2002">2002</option>
+                    <option value="2003">2003</option>
+                    <option value="2004">2004</option>
+                </select>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Distrito</label>
+                <select id="filter-distrito" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los Distritos</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Barrio</label>
+                <select id="filter-barrio" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los Barrios</option>
+                </select>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <div>
+                <label class="block text-xs font-semibold text-blue-400 mb-1">Planilla Policial (Parte)</label>
+                <select id="filter-planilla-policial" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+                    <option value="todos">Todos los partes</option>
+                </select>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <div>
+                <label class="block text-xs font-semibold text-sky-400 mb-1">Fuente Primaria</label>
+                <select id="filter-fuente-primaria" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todas las primarias</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-teal-400 mb-1">Fuente Secundaria</label>
+                <select id="filter-fuente-secundaria" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-teal-500">
+                    <option value="todos">Todas las secundarias</option>
+                </select>
+            </div>
+
+            <hr class="border-slate-800">
+
+            <div>
+                <label class="block text-xs font-semibold text-rose-400 mb-1">Menciona Antecedentes</label>
+                <select id="filter-antecedentes" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-rose-500">
+                    <option value="todos">Todos</option>
+                    <option value="Sí">Sí (menciona antecedentes/delito)</option>
+                    <option value="No">No</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Caracterización</label>
+                <select id="filter-caracterizacion" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todas las caracterizaciones</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Menciona otros hechos de violencia en el barrio</label>
+                <select id="filter-recurrencia" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los estados</option>
+                    <option value="Sí">Sí</option>
+                    <option value="No">No</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Valoración Víctima</label>
+                <select id="filter-val-victima" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todas las valoraciones</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Marco del Hecho</label>
+                <select id="filter-val-hecho" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los marcos</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Tono de la Crónica</label>
+                <select id="filter-tono" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los tonos</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Nivel de Dramatización</label>
+                <select id="filter-dramatizacion" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los niveles</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Extensión del Artículo</label>
+                <select id="filter-extension" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todas las extensiones</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">Portada (Tapa)</label>
+                <select id="filter-tapa" onchange="applyFilters()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                    <option value="todos">Todos los estados</option>
+                    <option value="Si">En Portada (Tapa)</option>
+                    <option value="No">No fue Tapa</option>
+                </select>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col overflow-y-auto custom-scrollbar p-6 bg-slate-900 gap-6">
+
+            <section class="bg-slate-950/60 border border-slate-800/70 rounded-lg p-5">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                    Panorama según filtros activos
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-slate-900/40 p-3 border border-slate-800/60 rounded h-56 flex flex-col items-center">
+                        <span class="text-xs font-semibold text-slate-400 mb-2">Valoración de Víctimas</span>
+                        <div class="w-full h-full relative"><canvas id="chart-val-victima"></canvas></div>
+                    </div>
+                    <div class="bg-slate-900/40 p-3 border border-slate-800/60 rounded h-56 flex flex-col items-center">
+                        <span class="text-xs font-semibold text-slate-400 mb-2">Fuentes Primarias</span>
+                        <div class="w-full h-full relative"><canvas id="chart-fuente"></canvas></div>
+                    </div>
+                    <div class="bg-slate-900/40 p-3 border border-slate-800/60 rounded h-56 flex flex-col items-center">
+                        <span class="text-xs font-semibold text-slate-400 mb-2">Casos por Distrito</span>
+                        <div id="distrito-chart-wrap" class="w-full h-full relative"><canvas id="chart-distrito"></canvas></div>
+                        <div id="distrito-single-wrap" class="hidden w-full h-full flex flex-col items-center justify-center">
+                            <span id="distrito-single-count" class="text-5xl font-black text-sky-400 leading-none"></span>
+                            <span class="text-xs text-slate-400 mt-2">caso(s) filtrados en</span>
+                            <span id="distrito-single-label" class="text-sm font-semibold text-slate-200 mt-0.5"></span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-[10.5px] text-slate-600 mt-4 text-center">El gráfico de distritos refleja la concentración de casos dentro de este corpus, no una medida de peligrosidad real.</p>
+            </section>
+
+            <section id="result-status-panel" class="bg-sky-950/40 border border-sky-800/80 rounded-lg p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div>
+                    <h3 class="text-sm font-bold text-sky-300 uppercase tracking-wider">Resultados de Selección</h3>
+                    <p id="result-text-detail" class="text-xs text-slate-300 mt-0.5">Mostrando todos los casos de la base de datos.</p>
+                </div>
+                <div class="flex items-baseline gap-2 bg-slate-950 px-4 py-2 rounded border border-slate-800">
+                    <span id="filtered-count" class="text-2xl font-black text-sky-400">0</span>
+                    <span class="text-xs text-slate-400">artículos filtrados</span>
+                    <span id="filtered-percentage" class="text-xs text-slate-500 font-mono">(0%)</span>
+                </div>
+            </section>
+
+            <section class="flex flex-col gap-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        Unidades de Análisis e Historias de Cobertura
+                    </h3>
+                    <span class="text-xs text-slate-400 font-mono font-semibold">Menciones de antecedentes de la víctima se destacan en color rojo en la tarjeta expandida.</span>
+                </div>
+                <div id="cards-container" class="grid grid-cols-1 gap-4"></div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        let charts = {};
+
+        function abrirMetodologia() {
+            const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Nota Metodológica — Corpus de Homicidios Juveniles Santa Fe</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background:#f7f7f5; color:#1c1c1a; margin:0; padding:3rem 1.5rem; line-height:1.65; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color:#8a8a84; margin-bottom: 6px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing:-0.02em; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1.5px solid #1c1c1a; }
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color:#555; margin: 2rem 0 0.75rem; padding-bottom: 6px; border-bottom: 1px solid #ddd; }
+  p { font-size: 14.5px; color:#333; margin-bottom: 0.75rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 0.5rem; }
+  th { text-align:left; font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8a84; padding: 8px 10px; border-bottom: 1px solid #ccc; }
+  td { padding: 8px 10px; border-bottom: 1px solid #e5e5e0; color:#333; }
+  td:first-child { font-weight: 600; color:#1c1c1a; white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
+  .foot { font-size: 12px; color:#8a8a84; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Investigación — Representaciones mediáticas</div>
+  <h1>Nota Metodológica</h1>
+
+  <h2>Objeto de análisis</h2>
+  <p>Este corpus reúne las notas periodísticas publicadas entre 2001 y 2004 en <em>El Litoral</em> (Santa Fe) que registran homicidios de varones jóvenes de 15 a 21 años. El análisis se inscribe en la tradición de los estudios de encuadre (<em>framing</em>) mediático, con foco en la construcción de representaciones sobre violencia juvenil y seguridad urbana.</p>
+  <p>Los hechos sin cobertura periodística (S/C) forman parte del corpus como dato negativo: la ausencia de cobertura es, en sí misma, un dato analítico.</p>
+
+  <h2>Estructura de datos</h2>
+  <p>El corpus se organiza en tres niveles relacionados: <strong>Hechos</strong> (H-ID), <strong>Artículos</strong> (A-ID) y <strong>Matriz de variables</strong>. Un artículo puede cubrir varios hechos; un hecho puede generar varios artículos. La codificación de variables refiere siempre al fragmento del artículo pertinente al hecho vinculado, no al artículo completo.</p>
+
+  <h2>Variables codificadas</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Descripción</th></tr></thead>
+    <tbody>
+      <tr><td>Caracterización</td><td>Cómo denomina el medio a la víctima</td></tr>
+      <tr><td>Vínculo</td><td>Relación entre víctima y agresor</td></tr>
+      <tr><td>Causa</td><td>Causa atribuida al hecho</td></tr>
+      <tr><td>Responsable</td><td>A quién se señala como responsable</td></tr>
+      <tr><td>Demanda</td><td>Demandas expresadas en la nota</td></tr>
+      <tr><td>Valoración víctima</td><td>Valoración implícita o explícita de la víctima</td></tr>
+      <tr><td>Marco del hecho</td><td>Encuadre interpretativo del suceso</td></tr>
+      <tr><td>Fuente dominante</td><td>Voz que estructura el relato</td></tr>
+      <tr><td>Otras fuentes</td><td>Fuentes secundarias citadas</td></tr>
+      <tr><td>Tono</td><td>Registro narrativo de la nota</td></tr>
+      <tr><td>Dramatización</td><td>Grado de dramatización del relato</td></tr>
+      <tr><td>Recurrencia</td><td>Si menciona hechos similares previos en el barrio</td></tr>
+      <tr><td>Extensión</td><td>Extensión estimada de la nota, en caracteres</td></tr>
+      <tr><td>Planilla policial</td><td>Clasificación del hecho según el parte/sumario policial</td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot">El corpus continúa en expansión a medida que avanza el relevamiento. Los datos son de carácter empírico y surgen del análisis directo de las fuentes primarias.</p>
+</div>
+</body>
+</html>`;
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }
+
+        // ─── VALIDACIÓN DE DATOS ────────────────────────────────────────────
+        // Chequeo silencioso al cargar: detecta inconsistencias comunes sin
+        // bloquear nada. Solo muestra el panel si encuentra algo.
+        //
+        // IMPORTANTE: un mismo idArticulo apareciendo en varias filas (varios
+        // hechos) NO es un error — es la estructura esperada cuando un
+        // artículo cubre varios hechos a la vez. Nunca se marca como problema.
+
+        function parseFechaDDMMYY(str) {
+            if (!str || str === "S/C") return null;
+            const p = str.split("/");
+            if (p.length !== 3) return null;
+            const dd = parseInt(p[0], 10), mm = parseInt(p[1], 10), yy = parseInt(p[2], 10);
+            if (isNaN(dd) || isNaN(mm) || isNaN(yy)) return null;
+            // Asumimos años 00-30 -> 2000-2030 para este corpus
+            return new Date(2000 + yy, mm - 1, dd);
+        }
+
+        function validateData() {
+            const issues = [];
+            const seenFilas = new Set();      // idHecho + idArticulo -> fila exacta duplicada
+            const barrioDistrito = {};       // barrio -> Set(distritos vistos)
+            const articuloMeta = {};         // idArticulo -> {titulo, autor} de la primera fila vista
+            const articuloFechas = {};       // idArticulo -> [fechas de hecho vinculadas]
+            const victimaFecha = {};         // "nombre|fecha" -> [idHecho...]
+
+            rawData.forEach((item, idx) => {
+                const esSC = item.titulo === "Sin Cobertura";
+
+                // 1) Fila exactamente duplicada: mismo hecho + mismo artículo repetidos.
+                //    OJO: un hecho con VARIOS artículos legítimos (H0011 con 3 artículos, por ej.)
+                //    NO es un error — cada fila tiene un idArticulo distinto. Solo marcamos
+                //    si la combinación hecho+artículo se repite tal cual.
+                const filaKey = item.idHecho + "|" + item.idArticulo;
+                if (seenFilas.has(filaKey)) {
+                    issues.push(`Fila duplicada: ${item.idHecho} con artículo ${item.idArticulo} aparece más de una vez (fila ${idx + 1}).`);
+                }
+                seenFilas.add(filaKey);
+
+                // 2) Fecha de hecho mal formada o con año fuera de rango
+                const fechaHecho = parseFechaDDMMYY(item.fecha);
+                if (item.fecha && item.fecha !== "S/C" && !fechaHecho) {
+                    issues.push(`${item.idHecho}: fecha del hecho mal formada (${item.fecha}).`);
+                }
+
+                // 3) Fecha de artículo mal formada
+                const fechaArt = parseFechaDDMMYY(item.fechaArticulo);
+                if (item.fechaArticulo && item.fechaArticulo !== "S/C" && !fechaArt) {
+                    issues.push(`${item.idHecho} (${item.idArticulo}): fecha del artículo mal formada (${item.fechaArticulo}).`);
+                }
+
+                // 4) El artículo no puede publicarse antes de que ocurra el hecho
+                if (fechaHecho && fechaArt && fechaArt < fechaHecho) {
+                    issues.push(`${item.idHecho} (${item.idArticulo}): la fecha del artículo (${item.fechaArticulo}) es anterior a la fecha del hecho (${item.fecha}).`);
+                }
+
+                // 5) Consistencia Barrio ↔ Distrito (un barrio no puede tener dos distritos)
+                if (item.barrio && item.barrio !== "-" && item.barrio !== "S/C" && item.distrito && item.distrito !== "-" && item.distrito !== "S/C") {
+                    if (!barrioDistrito[item.barrio]) barrioDistrito[item.barrio] = new Set();
+                    barrioDistrito[item.barrio].add(item.distrito);
+                }
+
+                // 6) Mismo idArticulo con título/autor distinto en otra fila (típico error de tipeo,
+                //    a diferencia de la cobertura múltiple legítima, que mantiene el mismo título/autor)
+                if (item.idArticulo && item.idArticulo !== "S/C" && !item.idArticulo.startsWith("S/C")) {
+                    const prev = articuloMeta[item.idArticulo];
+                    if (prev) {
+                        if (prev.titulo !== item.titulo) {
+                            issues.push(`${item.idArticulo}: aparece con títulos distintos en distintas filas ("${prev.titulo}" vs "${item.titulo}"). Si es el mismo artículo cubriendo varios hechos, el título debería repetirse igual.`);
+                        }
+                        if (prev.autor !== item.autor) {
+                            issues.push(`${item.idArticulo}: aparece con autores distintos en distintas filas ("${prev.autor}" vs "${item.autor}").`);
+                        }
+                    } else {
+                        articuloMeta[item.idArticulo] = { titulo: item.titulo, autor: item.autor };
+                    }
+
+                    // 7) Un mismo artículo vinculado a hechos muy alejados en el tiempo (posible ID mal tipeado)
+                    if (fechaHecho) {
+                        if (!articuloFechas[item.idArticulo]) articuloFechas[item.idArticulo] = [];
+                        for (const otra of articuloFechas[item.idArticulo]) {
+                            const diffDias = Math.abs((fechaHecho - otra.fecha) / (1000 * 60 * 60 * 24));
+                            if (diffDias > 60) {
+                                issues.push(`${item.idArticulo}: vincula hechos con fechas muy alejadas entre sí (${otra.idHecho}: ${otra.fecha.toLocaleDateString('es-AR')} vs ${item.idHecho}: ${item.fecha}) — revisar si el ID de artículo es correcto.`);
+                            }
+                        }
+                        articuloFechas[item.idArticulo].push({ fecha: fechaHecho, idHecho: item.idHecho });
+                    }
+                }
+
+                // 8) Hecho marcado Sin Cobertura pero con campos de encuadre cargados
+                if (esSC) {
+                    const camposEncuadre = ['valVictima', 'valHecho', 'tono', 'dramatizacion', 'fuenteDominante'];
+                    const conDatos = camposEncuadre.filter(c => item[c] && item[c] !== "S/C" && item[c] !== "Sin Cobertura");
+                    if (conDatos.length > 0) {
+                        issues.push(`${item.idHecho}: está marcado como "Sin Cobertura" pero tiene datos cargados en: ${conDatos.join(', ')}.`);
+                    }
+                } else {
+                    // 9) Campos clave vacíos en casos CON cobertura
+                    if (!item.barrio || item.barrio === "-") issues.push(`${item.idHecho}: falta el barrio.`);
+                    if (!item.distrito || item.distrito === "-") issues.push(`${item.idHecho}: falta el distrito.`);
+                    if (!item.valVictima || item.valVictima === "-") issues.push(`${item.idHecho}: falta la valoración de víctima.`);
+
+                    // 10) Caracteres en 0 con cobertura confirmada
+                    if (!item.caracteres || item.caracteres === 0) {
+                        issues.push(`${item.idHecho} (${item.idArticulo}): tiene cobertura pero la cantidad de caracteres está en 0 — parece un dato sin cargar.`);
+                    }
+                }
+
+                // 11) Edad fuera del rango de estudio (15–21)
+                if (item.edad !== undefined && item.edad !== null && item.edad !== "" && !esSC) {
+                    const edadNum = Number(item.edad);
+                    if (!isNaN(edadNum) && (edadNum < 15 || edadNum > 21)) {
+                        issues.push(`${item.idHecho}: edad fuera del rango de estudio (15–21) — víctima de ${edadNum} años.`);
+                    }
+                }
+
+                // 12) Posible duplicado: misma víctima + misma fecha en dos hechos distintos
+                if (item.victima && item.victima !== "-" && item.fecha && item.fecha !== "S/C") {
+                    const key = item.victima.trim().toLowerCase() + "|" + item.fecha;
+                    if (!victimaFecha[key]) victimaFecha[key] = [];
+                    victimaFecha[key].push(item.idHecho);
+                }
+            });
+
+            // Cierre del chequeo 5: reportar barrios con más de un distrito
+            Object.entries(barrioDistrito).forEach(([barrio, distritos]) => {
+                if (distritos.size > 1) {
+                    issues.push(`Barrio "${barrio}" aparece asociado a distritos distintos: ${[...distritos].join(', ')}.`);
+                }
+            });
+
+            // Cierre del chequeo 12: reportar víctima+fecha repetida en hechos distintos
+            Object.entries(victimaFecha).forEach(([key, ids]) => {
+                const idsUnicos = [...new Set(ids)];
+                if (idsUnicos.length > 1) {
+                    const nombre = key.split("|")[0];
+                    issues.push(`Posible duplicado: "${nombre}" aparece con la misma fecha en más de un hecho (${idsUnicos.join(', ')}).`);
+                }
+            });
+
+            return issues;
+        }
+
+        function showValidationPanel(issues) {
+            const panel = document.getElementById('validation-panel');
+            const summary = document.getElementById('validation-summary');
+            const details = document.getElementById('validation-details');
+            if (!issues.length) {
+                panel.classList.add('hidden');
+                return;
+            }
+            panel.classList.remove('hidden');
+            summary.textContent = `${issues.length} punto(s) de control de calidad para revisar`;
+            details.innerHTML = issues.map(i => `<div>• ${i}</div>`).join('');
+        }
+
+        function toggleValidationDetails() {
+            const details = document.getElementById('validation-details');
+            const caret = document.getElementById('validation-caret');
+            details.classList.toggle('hidden');
+            caret.textContent = details.classList.contains('hidden') ? '▾' : '▴';
+        }
+
+        // ─── LÓGICA EXISTENTE (sin cambios de comportamiento) ──────────────
+        function normalizeSource(source) {
+            if (!source) return "";
+            const clean = source.trim().toLowerCase();
+            if (clean === "familia" || clean === "familiar" || clean === "familiares") {
+                return "Familiares";
+            }
+            return source.charAt(0).toUpperCase() + source.slice(1);
+        }
+
+        function getSplittedSecondarySources(otrasFuentesStr) {
+            if (!otrasFuentesStr || otrasFuentesStr.trim() === "-" || otrasFuentesStr.trim() === "" || otrasFuentesStr.trim() === "S/C") {
+                return ["Ninguna"];
+            }
+            return otrasFuentesStr.split('/').map(f => normalizeSource(f.trim())).filter(f => f !== "");
+        }
+
+        function checkAntecedentes(item) {
+            const hechosConAntecedentesDeVictima = [
+                "H0011", "H0014", "H0025", "H0031", "H0032", "H0033",
+                "H0037", "H0041", "H0049", "H0057", "H0063", "H0073", "H0074"
+            ];
+            return hechosConAntecedentesDeVictima.includes(item.idHecho) ? "Sí" : "No";
+        }
+
+        function checkRecurrenciaBinaria(item) {
+            if (!item.recurrencia || item.recurrencia.trim() === "-" || item.recurrencia.toLowerCase().includes("no menciona")) {
+                return "No";
+            }
+            return "Sí";
+        }
+
+        function sortByFrequency(array) {
+            const freqMap = {};
+            array.forEach(item => { freqMap[item] = (freqMap[item] || 0) + 1; });
+            return Object.keys(freqMap).sort((a, b) => freqMap[b] - freqMap[a]);
+        }
+
+        function populateSelectors() {
+            const fillSelector = (id, values) => {
+                const select = document.getElementById(id);
+                values.forEach(val => {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    select.appendChild(opt);
+                });
+            };
+
+            const barriosSorted = [...new Set(rawData.map(i => i.barrio).filter(v => v && v !== "-" && v !== "S/C"))].sort();
+            const distritosSorted = [...new Set(rawData.map(i => i.distrito).filter(v => v && v !== "-" && v !== "S/C"))].sort();
+            fillSelector('filter-barrio', barriosSorted);
+            fillSelector('filter-distrito', distritosSorted);
+
+            const planillasValidas = sortByFrequency(
+                rawData.map(item => item.planillaPolicial).filter(p => p && p !== "S/D" && p !== "S/C")
+            );
+            fillSelector('filter-planilla-policial', planillasValidas);
+
+            const primariasFrecuentes = sortByFrequency(
+                rawData.map(item => normalizeSource(item.fuenteDominante)).filter(f => f && f !== "-" && f !== "Sin Cobertura" && f !== "S/C")
+            );
+            fillSelector('filter-fuente-primaria', primariasFrecuentes);
+
+            const secundariasAtomicas = [];
+            rawData.forEach(item => {
+                const secs = getSplittedSecondarySources(item.otrasFuentes);
+                secundariasAtomicas.push(...secs);
+            });
+            const secundariasFrecuentes = sortByFrequency(secundariasAtomicas.filter(s => s !== "S/C" && s !== "Sin Cobertura"));
+            fillSelector('filter-fuente-secundaria', secundariasFrecuentes);
+
+            const caracterizacionesFrecuentes = sortByFrequency(
+                rawData.map(item => item.caracterizacion).filter(c => c && c !== "-" && c !== "S/C")
+            );
+            fillSelector('filter-caracterizacion', caracterizacionesFrecuentes);
+
+            const marcosFrecuentes = sortByFrequency(
+                rawData.map(item => item.valHecho).filter(m => m && m !== "-" && m !== "S/C")
+            );
+            fillSelector('filter-val-hecho', marcosFrecuentes);
+
+            fillSelector('filter-dramatizacion', ["Baja", "Media", "Alta"]);
+            fillSelector('filter-extension', ["Muy breve", "Breve", "Medio", "Extenso"]);
+
+            const getUniqueValuesNoSorted = (key) => [...new Set(rawData.map(item => item[key]).filter(v => v && v !== "-" && v !== "S/C" && v !== "Sin Cobertura"))];
+            fillSelector('filter-val-victima', getUniqueValuesNoSorted('valVictima'));
+            fillSelector('filter-tono', getUniqueValuesNoSorted('tono'));
+        }
+
+        function resetFilters() {
+            document.querySelectorAll('aside select').forEach(select => select.value = 'todos');
+            applyFilters();
+        }
+
+        function getFilteredData() {
+            const selectedPrimaria = document.getElementById('filter-fuente-primaria').value;
+            const selectedSecundaria = document.getElementById('filter-fuente-secundaria').value;
+            const selectedAntecedentes = document.getElementById('filter-antecedentes').value;
+            const selectedCobertura = document.getElementById('filter-cobertura').value;
+            const selectedRecurrencia = document.getElementById('filter-recurrencia').value;
+            const selectedPlanilla = document.getElementById('filter-planilla-policial').value;
+
+            return rawData.filter(item => {
+                const year = item.fecha ? "20" + item.fecha.split('/')[2] : "";
+                const isSC = item.titulo === "Sin Cobertura";
+                const mentionsAnt = checkAntecedentes(item);
+                const isRecurrente = checkRecurrenciaBinaria(item);
+
+                if (selectedCobertura === 'con' && isSC) return false;
+                if (selectedCobertura === 'sin' && !isSC) return false;
+
+                if (selectedPrimaria !== 'todos' && normalizeSource(item.fuenteDominante).toLowerCase() !== selectedPrimaria.toLowerCase()) return false;
+
+                if (selectedSecundaria !== 'todos') {
+                    const secs = getSplittedSecondarySources(item.otrasFuentes).map(s => s.toLowerCase());
+                    if (!secs.includes(selectedSecundaria.toLowerCase())) return false;
+                }
+
+                if (selectedPlanilla !== 'todos' && item.planillaPolicial !== selectedPlanilla) return false;
+
+                if (selectedAntecedentes !== 'todos' && mentionsAnt !== selectedAntecedentes) return false;
+                if (selectedRecurrencia !== 'todos' && isRecurrente !== selectedRecurrencia) return false;
+
+                return (
+                    (document.getElementById('filter-distrito').value === 'todos' || item.distrito === document.getElementById('filter-distrito').value) &&
+                    (document.getElementById('filter-barrio').value === 'todos' || item.barrio === document.getElementById('filter-barrio').value) &&
+                    (document.getElementById('filter-val-victima').value === 'todos' || item.valVictima === document.getElementById('filter-val-victima').value) &&
+                    (document.getElementById('filter-val-hecho').value === 'todos' || item.valHecho === document.getElementById('filter-val-hecho').value) &&
+                    (document.getElementById('filter-tono').value === 'todos' || item.tono === document.getElementById('filter-tono').value) &&
+                    (document.getElementById('filter-dramatizacion').value === 'todos' || item.dramatizacion === document.getElementById('filter-dramatizacion').value) &&
+                    (document.getElementById('filter-extension').value === 'todos' || item.extension === document.getElementById('filter-extension').value) &&
+                    (document.getElementById('filter-caracterizacion').value === 'todos' || item.caracterizacion === document.getElementById('filter-caracterizacion').value) &&
+                    (document.getElementById('filter-tapa').value === 'todos' || item.tapa === document.getElementById('filter-tapa').value) &&
+                    (document.getElementById('filter-year').value === 'todos' || year === document.getElementById('filter-year').value)
+                );
+            });
+        }
+
+        function selectTab(event, idHecho, tabIdx) {
+            event.stopPropagation();
+
+            const tabButtons = document.querySelectorAll(`.tab-btn-${idHecho}`);
+            tabButtons.forEach(btn => {
+                btn.classList.remove('bg-sky-950', 'text-sky-400', 'border-sky-800');
+                btn.classList.add('bg-slate-900', 'text-slate-400', 'border-slate-800');
+            });
+
+            const activeBtn = document.getElementById(`btn-${idHecho}-${tabIdx}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-slate-900', 'text-slate-400', 'border-slate-800');
+                activeBtn.classList.add('bg-sky-950', 'text-sky-400', 'border-sky-800');
+            }
+
+            const tabContents = document.querySelectorAll(`.tab-content-${idHecho}`);
+            tabContents.forEach(content => content.classList.add('hidden'));
+
+            const activeContent = document.getElementById(`content-${idHecho}-${tabIdx}`);
+            if (activeContent) {
+                activeContent.classList.remove('hidden');
+            }
+        }
+
+        function renderCards(filteredData) {
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+
+            const totalCount = rawData.length;
+            const filteredCount = filteredData.length;
+            const percentage = ((filteredCount / totalCount) * 100).toFixed(1);
+
+            document.getElementById('counter').textContent = `${filteredCount} de ${totalCount} Unidades`;
+            document.getElementById('filtered-count').textContent = filteredCount;
+            document.getElementById('filtered-percentage').textContent = `(${percentage}%)`;
+
+            let activeFiltersText = [];
+            if (document.getElementById('filter-cobertura').value !== 'todos') activeFiltersText.push(`Cobertura: ${document.getElementById('filter-cobertura').value}`);
+            if (document.getElementById('filter-planilla-policial').value !== 'todos') activeFiltersText.push(`Planilla: ${document.getElementById('filter-planilla-policial').value}`);
+            if (document.getElementById('filter-fuente-primaria').value !== 'todos') activeFiltersText.push(`Fuente Primaria: ${document.getElementById('filter-fuente-primaria').value}`);
+            if (document.getElementById('filter-fuente-secundaria').value !== 'todos') activeFiltersText.push(`Fuente Secundaria: ${document.getElementById('filter-fuente-secundaria').value}`);
+            if (document.getElementById('filter-antecedentes').value !== 'todos') activeFiltersText.push(`Antecedentes: ${document.getElementById('filter-antecedentes').value}`);
+
+            const filterDetails = activeFiltersText.length > 0 ? `Filtros activos: ${activeFiltersText.join(' | ')}.` : "Sin filtros analíticos aplicados.";
+            document.getElementById('result-text-detail').textContent = filterDetails;
+
+            if (filteredCount === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-500 bg-slate-950 border border-slate-800 rounded">No se encontraron registros.</div>`;
+                return;
+            }
+
+            filteredData.forEach(item => {
+                const card = document.createElement('div');
+                card.className = "bg-slate-950 border border-slate-800 rounded-lg p-4 cursor-pointer hover:border-slate-700 transition duration-200 shadow-sm";
+                card.onclick = () => toggleCard(item.idHecho);
+
+                const badgeColor = item.valVictima === 'Positiva' ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80' :
+                                   item.valVictima === 'Negativa' ? 'bg-rose-950/80 text-rose-400 border-rose-800/80' :
+                                   item.valVictima === 'Neutra' ? 'bg-amber-950/80 text-amber-400 border-amber-800/80' :
+                                   'bg-slate-850 text-slate-400 border-slate-800';
+
+                const hasAnt = checkAntecedentes(item);
+                const isSC = item.titulo === "Sin Cobertura";
+
+                const displayPrimaria = normalizeSource(item.fuenteDominante) || 'S/C';
+                const splitSecs = getSplittedSecondarySources(item.otrasFuentes);
+                const displaySecundarias = splitSecs.length > 0 ? splitSecs.join(' / ') : 'Ninguna';
+
+                const articulosDelMismoHecho = rawData.filter(x => x.idHecho === item.idHecho);
+                let htmlArticulosTab2 = "";
+                articulosDelMismoHecho.forEach(art => {
+                    htmlArticulosTab2 += `
+                        <div class="border-b border-slate-800/60 pb-2 mb-2 last:border-none last:pb-0 last:mb-0">
+                            <div class="flex justify-between items-start gap-2">
+                                <span class="font-mono text-[10px] text-sky-400">${art.idArticulo}</span>
+                                <span class="text-slate-500 text-[10px]">${art.fechaArticulo}</span>
+                            </div>
+                            <h6 class="font-bold text-slate-100 text-xs mt-1">"${art.titulo}"</h6>
+                            <div class="grid grid-cols-3 gap-1 text-[11px] text-slate-400 mt-1">
+                                <div><span class="text-slate-500">Autor:</span> ${art.autor || '-'}</div>
+                                <div><span class="text-slate-500">Sección:</span> ${art.seccion || '-'}</div>
+                                <div><span class="text-slate-500">Medio:</span> ${art.medio}</div>
+                            </div>
+                            ${art.referencia && art.referencia !== "S/C" ? `
+                            <a href="${art.referencia}" target="_blank" onclick="event.stopPropagation();" class="text-sky-400 hover:underline inline-flex items-center gap-1 text-[10px] mt-1.5">
+                                Ver recorte original ↗
+                            </a>` : ''}
+                        </div>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-bold font-mono text-sky-400 bg-sky-950/60 border border-sky-800/80 px-2 py-0.5 rounded">${item.idHecho}</span>
+                            <span class="text-xs text-slate-500 font-mono">${item.fecha}</span>
+                            <h4 class="font-bold text-slate-100 text-sm md:text-base">${item.victima} <span class="font-normal text-slate-400 text-xs">(${item.edad} años)</span></h4>
+                        </div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            ${hasAnt === 'Sí' ? '<span class="text-[10px] font-bold bg-amber-950/40 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded uppercase tracking-wider">Antecedentes</span>' : ''}
+                            <span class="text-xs px-2 py-0.5 rounded border ${badgeColor}">${isSC ? 'S/C' : item.valVictima}</span>
+                            <span class="text-xs px-2 py-0.5 rounded border border-slate-800 bg-slate-900 text-slate-300">${item.distrito} - ${item.barrio}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-2 flex items-center justify-between gap-4">
+                        <p class="text-sm text-slate-300 truncate max-w-xl">${item.titulo}</p>
+                        <div class="flex gap-3 text-[10.5px] text-slate-500 flex-shrink-0">
+                            <span>${displayPrimaria}</span>
+                            <span class="text-slate-700">·</span>
+                            <span>${displaySecundarias}</span>
+                        </div>
+                    </div>
+
+                    <div id="expand-${item.idHecho}" class="hidden mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-4">
+
+                        <div class="flex flex-wrap gap-1 border-b border-slate-900 pb-2">
+                            <button id="btn-${item.idHecho}-1" onclick="selectTab(event, '${item.idHecho}', 1)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-sky-950 text-sky-400 border-sky-800 transition">
+                                Ficha Hecho (P1)
+                            </button>
+                            <button id="btn-${item.idHecho}-2" onclick="selectTab(event, '${item.idHecho}', 2)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Hemerografía (P2)
+                            </button>
+                            <button id="btn-${item.idHecho}-3" onclick="selectTab(event, '${item.idHecho}', 3)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Registro Policial (P3)
+                            </button>
+                            <button id="btn-${item.idHecho}-4" onclick="selectTab(event, '${item.idHecho}', 4)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Encuadres (P4)
+                            </button>
+                        </div>
+
+                        <div id="content-${item.idHecho}-1" class="tab-content-${item.idHecho} grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60">
+                                <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Datos Situacionales</h5>
+                                <div class="space-y-1.5">
+                                    <div><span class="text-slate-500">ID Hecho:</span> <span class="text-slate-200 font-mono font-bold">${item.idHecho}</span></div>
+                                    <div><span class="text-slate-500">Fecha del Hecho:</span> <span class="text-slate-200 font-mono">${item.fecha}</span></div>
+                                    <div><span class="text-slate-500">Víctima:</span> <span class="text-slate-200 font-bold">${item.victima}</span></div>
+                                    <div><span class="text-slate-500">Edad:</span> <span class="text-slate-200 font-semibold">${item.edad} años</span></div>
+                                    <div><span class="text-slate-500">Arma Empleada:</span> <span class="text-slate-200">${item.arma}</span></div>
+                                </div>
+                            </div>
+                            <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60">
+                                <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Dimensión Espacial y de Archivo</h5>
+                                <div class="space-y-1.5">
+                                    <div><span class="text-slate-500">Barrio:</span> <span class="text-slate-200">${item.barrio}</span></div>
+                                    <div><span class="text-slate-500">Distrito Geográfico:</span> <span class="text-slate-200">${item.distrito}</span></div>
+                                    <div><span class="text-slate-500">Espacio Físico:</span> <span class="text-slate-200">${item.espacio || 'No especifica'}</span></div>
+                                    <div><span class="text-slate-500">Fuente de Soporte:</span> <span class="text-slate-200">${item.fuenteSoporte || '-'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="content-${item.idHecho}-2" class="tab-content-${item.idHecho} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs">
+                            <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-3 text-sky-400">Artículos y Coberturas Asociadas</h5>
+                            <div class="space-y-3">
+                                ${htmlArticulosTab2}
+                            </div>
+                        </div>
+
+                        <div id="content-${item.idHecho}-3" class="tab-content-${item.idHecho} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs flex flex-col justify-center">
+                            <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Planilla Policial</h5>
+                            <div class="p-3 bg-slate-950/80 rounded border border-slate-800 inline-flex items-center gap-2 w-full md:w-auto self-start">
+                                <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                                <div><span class="text-slate-400">Clasificación de Sumario:</span> <strong class="text-slate-100 font-bold ml-1">${item.planillaPolicial === 'S/D' || !item.planillaPolicial ? 'S/D (Sin datos en planilla)' : item.planillaPolicial}</strong></div>
+                            </div>
+                        </div>
+
+                        <div id="content-${item.idHecho}-4" class="tab-content-${item.idHecho} hidden grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60 space-y-1.5">
+                                <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Representación Discursiva</h5>
+                                <div><span class="text-slate-500">Portada (Tapa):</span> <span class="text-slate-200 font-bold">${item.tapa}</span></div>
+                                <div><span class="text-slate-500">Caracterización:</span> <span class="text-slate-200 font-bold text-amber-500">${item.caracterizacion}</span></div>
+                                <div><span class="text-slate-500">Vínculo:</span> <span class="text-slate-200">${item.vinculo}</span></div>
+                                <div><span class="text-slate-500">Causa Atribuida:</span> <span class="text-slate-200">${item.causa}</span></div>
+                                <div><span class="text-slate-500">Responsable Atribuido:</span> <span class="text-slate-200">${item.responsable}</span></div>
+                                <div><span class="text-slate-500">Demanda Expresada:</span> <span class="text-slate-200">${item.demanda}</span></div>
+                            </div>
+                            <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60 space-y-1.5">
+                                <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Encuadre Técnico</h5>
+                                <div><span class="text-slate-500">Valoración Víctima:</span> <span class="text-slate-200 font-semibold">${item.valVictima}</span></div>
+                                <div><span class="text-slate-500">Marco del Hecho:</span> <span class="text-slate-200">${item.valHecho}</span></div>
+                                <div><span class="text-slate-500">Tono de la Crónica:</span> <span class="text-slate-200">${item.tono}</span></div>
+                                <div><span class="text-slate-500">Dramatización:</span> <span class="text-slate-200">${item.dramatizacion}</span></div>
+                                <div><span class="text-slate-500">Recurrencia Territorial:</span> <span class="text-slate-200">${item.recurrencia}</span></div>
+                                <div><span class="text-slate-500">Extensión:</span> <span class="text-slate-200">${item.extension} (${item.caracteres} car.)</span></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-900/60 border border-slate-800 p-3 rounded mt-1 text-xs">
+                            <div class="flex justify-between items-center">
+                                <strong class="text-sky-400">Análisis y Observaciones de Campo:</strong>
+                                ${hasAnt === 'Sí' ? '<span class="text-[10px] font-bold text-amber-400 uppercase">Contiene referencias a antecedentes policiales/delictivos</span>' : ''}
+                            </div>
+                            <p class="text-slate-300 mt-1 leading-relaxed">${item.observaciones}</p>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleCard(id) {
+            const expandDiv = document.getElementById(`expand-${id}`);
+            if (expandDiv.classList.contains('hidden')) {
+                expandDiv.classList.remove('hidden');
+            } else {
+                expandDiv.classList.add('hidden');
+            }
+        }
+
+        function updateCharts(filteredData) {
+            const valVictimaData = countProperty(filteredData, 'valVictima');
+            const fuenteData = countProperty(filteredData, 'fuenteDominante');
+            const distritoData = countProperty(filteredData, 'distrito');
+
+            const colorMapVal = {
+                'Positiva': '#10b981',
+                'Neutra': '#f59e0b',
+                'Negativa': '#f43f5e',
+                'Sin Cobertura': '#64748b'
+            };
+            const valColors = valVictimaData.labels.map(label => colorMapVal[label] || '#475569');
+
+            const fuenteColors = fuenteData.labels.map(label => {
+                const cleanLabel = label.trim().toLowerCase();
+                if (cleanLabel === 'policial') return '#2563eb';
+                else if (cleanLabel === 'judicial') return '#8b5cf6';
+                else if (cleanLabel === 'familiar' || cleanLabel === 'familiares') return '#ec4899';
+                else if (cleanLabel === 'institucional') return '#14b8a6';
+                else if (cleanLabel === 'sin cobertura' || cleanLabel === 's/c' || cleanLabel === '-') return '#64748b';
+                return '#f97316';
+            });
+
+            const chartConfig = (ctx, counts, colors) => {
+                if (charts[ctx]) charts[ctx].destroy();
+
+                charts[ctx] = new Chart(document.getElementById(ctx), {
+                    type: 'doughnut',
+                    data: {
+                        labels: counts.labels,
+                        datasets: [{
+                            data: counts.values,
+                            backgroundColor: colors,
+                            borderColor: '#020617',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#94a3b8', font: { size: 9 }, boxWidth: 8 }
+                            }
+                        }
+                    }
+                });
+            };
+
+            // Distrito: barra horizontal ordenada, o número grande si queda una sola categoría
+            const distritoPairs = distritoData.labels.map((l, i) => ({ label: l, value: distritoData.values[i] }))
+                .sort((a, b) => b.value - a.value);
+
+            const chartWrap = document.getElementById('distrito-chart-wrap');
+            const singleWrap = document.getElementById('distrito-single-wrap');
+
+            if (distritoPairs.length === 1) {
+                // Una sola categoría: un gráfico comparativo no aporta nada, mostramos la cifra
+                if (charts['chart-distrito']) { charts['chart-distrito'].destroy(); charts['chart-distrito'] = null; }
+                chartWrap.classList.add('hidden');
+                singleWrap.classList.remove('hidden');
+                document.getElementById('distrito-single-count').textContent = distritoPairs[0].value;
+                document.getElementById('distrito-single-label').textContent = distritoPairs[0].label;
+            } else {
+                chartWrap.classList.remove('hidden');
+                singleWrap.classList.add('hidden');
+                if (charts['chart-distrito']) charts['chart-distrito'].destroy();
+                charts['chart-distrito'] = new Chart(document.getElementById('chart-distrito'), {
+                    type: 'bar',
+                    data: {
+                        labels: distritoPairs.map(p => p.label),
+                        datasets: [{
+                            data: distritoPairs.map(p => p.value),
+                            backgroundColor: '#38bdf8',
+                            borderRadius: 3
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { color: 'rgba(148,163,184,0.08)' }, ticks: { color: '#94a3b8', font: { size: 9 }, stepSize: 1 } },
+                            y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9.5 } } }
+                        }
+                    }
+                });
+            }
+
+            chartConfig('chart-val-victima', valVictimaData, valColors);
+            chartConfig('chart-fuente', fuenteData, fuenteColors);
+        }
+
+        function countProperty(data, key) {
+            const counts = {};
+            data.forEach(item => {
+                const val = item[key] === "-" || !item[key] ? "Sin Cobertura" : item[key];
+                counts[val] = (counts[val] || 0) + 1;
+            });
+            return { labels: Object.keys(counts), values: Object.values(counts) };
+        }
+
+        function applyFilters() {
+            const filtered = getFilteredData();
+            renderCards(filtered);
+            updateCharts(filtered);
+        }
+
+        window.onload = () => {
+            const issues = validateData();
+            showValidationPanel(issues);
+            populateSelectors();
+            applyFilters();
+        };
+    </script>
+</body>
+</html>
