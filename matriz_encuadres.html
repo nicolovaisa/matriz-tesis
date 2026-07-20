@@ -6,12 +6,55 @@
     <title>Visualizador Analítico - Homicidios Juveniles Santa Fe</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Mapa: Leaflet + plugins de clustering y mapa de calor -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <!-- DATOS: separados en archivo aparte. Para actualizar el corpus, editar matriz_data.js -->
     <script src="matriz_data.js"></script>
     <style>
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        /* ---- Mapa ---- */
+        #leaflet-map { background: #0f172a; }
+        .case-marker-dot {
+            border-radius: 50%;
+            border: 2px solid rgba(15,23,42,0.85);
+            box-shadow: 0 0 0 1px rgba(148,163,184,0.25);
+            cursor: pointer;
+        }
+        .marker-cluster-case {
+            background: rgba(56,189,248,0.35);
+            border-radius: 50%;
+        }
+        .marker-cluster-case div {
+            background: rgba(14,165,233,0.85);
+            color: #f0f9ff;
+            font-weight: 700;
+            font-size: 12px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .leaflet-popup-content-wrapper { background: #0f172a; color: #e2e8f0; border: 1px solid #1e293b; border-radius: 8px; }
+        .leaflet-popup-tip { background: #0f172a; }
+        .leaflet-popup-content { margin: 10px 12px; font-family: inherit; }
+        .map-filter-panel::-webkit-scrollbar { width: 5px; }
+        .map-filter-panel::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .map-reset-btn {
+            background: #0f172a !important;
+            color: #e2e8f0 !important;
+            border: none;
+            width: 30px; height: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            display: block;
+        }
+        .map-reset-btn:hover { background: #1e293b !important; }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col">
@@ -23,6 +66,14 @@
                 <p class="text-xs text-slate-400">Análisis Empírico de Encuadres de Prensa (2001 - 2004) | Santa Fe</p>
             </div>
             <div class="flex items-center gap-3">
+                <div class="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                    <button id="view-btn-articulos" onclick="switchView('articulos')" class="text-xs font-bold px-3 py-1.5 rounded-md transition bg-sky-950 text-sky-400">
+                        📰 Artículos
+                    </button>
+                    <button id="view-btn-mapa" onclick="switchView('mapa')" class="text-xs font-bold px-3 py-1.5 rounded-md transition text-slate-400 hover:text-slate-200">
+                        🗺️ Mapa
+                    </button>
+                </div>
                 <button onclick="abrirMetodologia()" class="text-xs font-semibold text-slate-400 hover:text-sky-400 border border-slate-800 hover:border-sky-800 px-3 py-1.5 rounded transition">
                     ℹ Nota metodológica ↗
                 </button>
@@ -48,7 +99,7 @@
         </div>
     </div>
 
-    <div class="flex flex-1 flex-col lg:flex-row overflow-hidden">
+    <div id="view-articulos" class="flex flex-1 flex-col lg:flex-row overflow-hidden">
 
         <aside class="w-full lg:w-80 bg-slate-950 border-r border-slate-800 p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
             <div class="flex justify-between items-center pb-2 border-b border-slate-800">
@@ -243,6 +294,58 @@
         </main>
     </div>
 
+    <!-- ═══════════════ VISTA MAPA ═══════════════ -->
+    <div id="view-mapa" class="hidden flex-1 relative overflow-hidden">
+        <div id="leaflet-map" class="absolute inset-0 z-0"></div>
+
+        <!-- Panel flotante de controles -->
+        <div class="absolute top-3 left-3 z-[1000] w-80 max-w-[88vw] flex flex-col gap-2">
+
+            <!-- Bloque: modo de vista + agrupación + leyenda -->
+            <div class="bg-slate-950/95 border border-slate-800 rounded-lg shadow-xl backdrop-blur-sm">
+                <div class="p-3 flex flex-col gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Modo de vista</label>
+                        <div class="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                            <button id="map-mode-btn-puntos" onclick="setMapViewMode('puntos')" class="flex-1 text-xs font-bold px-2 py-1.5 rounded-md transition bg-sky-950 text-sky-400">● Puntos</button>
+                            <button id="map-mode-btn-calor" onclick="setMapViewMode('calor')" class="flex-1 text-xs font-bold px-2 py-1.5 rounded-md transition text-slate-400 hover:text-slate-200">▨ Calor</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Capa base</label>
+                        <select id="map-base-layer" onchange="onMapBaseLayerChange()" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500">
+                            <option value="oscuro">Oscuro</option>
+                            <option value="claro">Claro</option>
+                            <option value="satelital">Satelital</option>
+                            <option value="topografico">Topográfico</option>
+                        </select>
+                    </div>
+
+                    <div class="pt-1 border-t border-slate-800 flex items-center justify-between">
+                        <span class="text-[11px] text-slate-400">Casos visibles en el mapa:</span>
+                        <span id="map-visible-count" class="text-sm font-black text-sky-400">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bloque: filtros (colapsable, mismo estado que el sidebar) -->
+            <div class="bg-slate-950/95 border border-slate-800 rounded-lg shadow-xl backdrop-blur-sm">
+                <button onclick="toggleMapFiltersPanel()" class="w-full flex justify-between items-center px-3 py-2.5 text-left">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filtros (comparten estado con Artículos)</span>
+                    <span id="map-filters-caret" class="text-slate-500 text-xs">▸</span>
+                </button>
+                <div id="map-filters-body" class="hidden map-filter-panel px-3 pb-3 flex flex-col gap-2.5 max-h-[55vh] overflow-y-auto">
+                    <div class="flex justify-end">
+                        <button onclick="resetFilters()" class="text-[10px] text-rose-400 hover:text-rose-300 font-semibold">Limpiar todos</button>
+                    </div>
+                    <!-- Los <select> de abajo se generan/pueblan igual que el sidebar, pero con sufijo -map y sincronizados con él -->
+                    <div id="map-filters-mirror" class="flex flex-col gap-2.5 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let charts = {};
 
@@ -276,7 +379,7 @@
   <p>Los hechos sin cobertura periodística (S/C) forman parte del corpus como dato negativo: la ausencia de cobertura es, en sí misma, un dato analítico.</p>
 
   <h2>Estructura de datos</h2>
-  <p>El corpus se organiza en tres niveles relacionados: <strong>Hechos</strong> (H-ID), <strong>Artículos</strong> (A-ID) y <strong>Matriz de variables</strong>. Un artículo puede cubrir varios hechos; un hecho puede generar varios artículos. La codificación de variables refiere siempre al fragmento del artículo pertinente al hecho vinculado, no al artículo completo.</p>
+  <p>El corpus se organiza en cuatro niveles relacionados: <strong>Hechos</strong> (H-ID), <strong>Artículos</strong> (A-ID), <strong>Matriz de variables</strong> y <strong>Planilla Policial</strong> (clasificación del hecho según el parte/sumario policial, independiente de la cobertura periodística). Un artículo puede cubrir varios hechos; un hecho puede generar varios artículos. La codificación de variables refiere siempre al fragmento del artículo pertinente al hecho vinculado, no al artículo completo.</p>
 
   <h2>Variables codificadas</h2>
   <table>
@@ -294,7 +397,8 @@
       <tr><td>Tono</td><td>Registro narrativo de la nota</td></tr>
       <tr><td>Dramatización</td><td>Grado de dramatización del relato</td></tr>
       <tr><td>Recurrencia</td><td>Si menciona hechos similares previos en el barrio</td></tr>
-      <tr><td>Extensión</td><td>Extensión estimada de la nota, en caracteres</td></tr>
+      <tr><td>Extensión</td><td>Categoría derivada de la cantidad de caracteres: Muy breve (&lt;1000) · Breve (1000–1999) · Medio (2000–3499) · Extenso (≥3500)</td></tr>
+      <tr><td>Caracteres</td><td>Cantidad exacta de caracteres del fragmento del artículo</td></tr>
       <tr><td>Planilla policial</td><td>Clasificación del hecho según el parte/sumario policial</td></tr>
     </tbody>
   </table>
@@ -330,7 +434,6 @@
             const issues = [];
             const seenFilas = new Set();      // idHecho + idArticulo -> fila exacta duplicada
             const barrioDistrito = {};       // barrio -> Set(distritos vistos)
-            const articuloMeta = {};         // idArticulo -> {titulo, autor} de la primera fila vista
             const articuloFechas = {};       // idArticulo -> [fechas de hecho vinculadas]
             const victimaFecha = {};         // "nombre|fecha" -> [idHecho...]
 
@@ -370,22 +473,8 @@
                     barrioDistrito[item.barrio].add(item.distrito);
                 }
 
-                // 6) Mismo idArticulo con título/autor distinto en otra fila (típico error de tipeo,
-                //    a diferencia de la cobertura múltiple legítima, que mantiene el mismo título/autor)
+                // 6) Un mismo artículo vinculado a hechos muy alejados en el tiempo (posible ID mal tipeado)
                 if (item.idArticulo && item.idArticulo !== "S/C" && !item.idArticulo.startsWith("S/C")) {
-                    const prev = articuloMeta[item.idArticulo];
-                    if (prev) {
-                        if (prev.titulo !== item.titulo) {
-                            issues.push(`${item.idArticulo}: aparece con títulos distintos en distintas filas ("${prev.titulo}" vs "${item.titulo}"). Si es el mismo artículo cubriendo varios hechos, el título debería repetirse igual.`);
-                        }
-                        if (prev.autor !== item.autor) {
-                            issues.push(`${item.idArticulo}: aparece con autores distintos en distintas filas ("${prev.autor}" vs "${item.autor}").`);
-                        }
-                    } else {
-                        articuloMeta[item.idArticulo] = { titulo: item.titulo, autor: item.autor };
-                    }
-
-                    // 7) Un mismo artículo vinculado a hechos muy alejados en el tiempo (posible ID mal tipeado)
                     if (fechaHecho) {
                         if (!articuloFechas[item.idArticulo]) articuloFechas[item.idArticulo] = [];
                         for (const otra of articuloFechas[item.idArticulo]) {
@@ -663,9 +752,10 @@
             }
 
             filteredData.forEach(item => {
+                const rowKey = item.idHecho + '-' + item.idArticulo;  // clave única por fila (hecho+artículo)
                 const card = document.createElement('div');
                 card.className = "bg-slate-950 border border-slate-800 rounded-lg p-4 cursor-pointer hover:border-slate-700 transition duration-200 shadow-sm";
-                card.onclick = () => toggleCard(item.idHecho);
+                card.onclick = () => toggleCard(rowKey);
 
                 const badgeColor = item.valVictima === 'Positiva' ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/80' :
                                    item.valVictima === 'Negativa' ? 'bg-rose-950/80 text-rose-400 border-rose-800/80' :
@@ -718,31 +808,36 @@
 
                     <div class="mt-2 flex items-center justify-between gap-4">
                         <p class="text-sm text-slate-300 truncate max-w-xl">${item.titulo}</p>
-                        <div class="flex gap-3 text-[10.5px] text-slate-500 flex-shrink-0">
+                        <div class="flex items-center gap-3 text-[10.5px] text-slate-500 flex-shrink-0">
                             <span>${displayPrimaria}</span>
                             <span class="text-slate-700">·</span>
                             <span>${displaySecundarias}</span>
+                            ${item.referencia && item.referencia !== "S/C" ? `
+                            <span class="text-slate-700">·</span>
+                            <a href="${item.referencia}" target="_blank" onclick="event.stopPropagation();" class="text-sky-400 hover:underline hover:text-sky-300 inline-flex items-center gap-1">
+                                Ver nota ↗
+                            </a>` : ''}
                         </div>
                     </div>
 
-                    <div id="expand-${item.idHecho}" class="hidden mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-4">
+                    <div id="expand-${rowKey}" class="hidden mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-4">
 
                         <div class="flex flex-wrap gap-1 border-b border-slate-900 pb-2">
-                            <button id="btn-${item.idHecho}-1" onclick="selectTab(event, '${item.idHecho}', 1)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-sky-950 text-sky-400 border-sky-800 transition">
-                                Ficha Hecho (P1)
+                            <button id="btn-${rowKey}-1" onclick="selectTab(event, '${rowKey}', 1)" class="tab-btn-${rowKey} text-[11px] font-bold px-3 py-1.5 rounded border bg-sky-950 text-sky-400 border-sky-800 transition">
+                                Ficha Hecho
                             </button>
-                            <button id="btn-${item.idHecho}-2" onclick="selectTab(event, '${item.idHecho}', 2)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
-                                Hemerografía (P2)
+                            <button id="btn-${rowKey}-2" onclick="selectTab(event, '${rowKey}', 2)" class="tab-btn-${rowKey} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Hemerografía
                             </button>
-                            <button id="btn-${item.idHecho}-3" onclick="selectTab(event, '${item.idHecho}', 3)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
-                                Registro Policial (P3)
+                            <button id="btn-${rowKey}-3" onclick="selectTab(event, '${rowKey}', 3)" class="tab-btn-${rowKey} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Registro Policial
                             </button>
-                            <button id="btn-${item.idHecho}-4" onclick="selectTab(event, '${item.idHecho}', 4)" class="tab-btn-${item.idHecho} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
-                                Encuadres (P4)
+                            <button id="btn-${rowKey}-4" onclick="selectTab(event, '${rowKey}', 4)" class="tab-btn-${rowKey} text-[11px] font-bold px-3 py-1.5 rounded border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 transition">
+                                Encuadres
                             </button>
                         </div>
 
-                        <div id="content-${item.idHecho}-1" class="tab-content-${item.idHecho} grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div id="content-${rowKey}-1" class="tab-content-${rowKey} grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                             <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60">
                                 <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Datos Situacionales</h5>
                                 <div class="space-y-1.5">
@@ -764,14 +859,14 @@
                             </div>
                         </div>
 
-                        <div id="content-${item.idHecho}-2" class="tab-content-${item.idHecho} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs">
+                        <div id="content-${rowKey}-2" class="tab-content-${rowKey} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs">
                             <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-3 text-sky-400">Artículos y Coberturas Asociadas</h5>
                             <div class="space-y-3">
                                 ${htmlArticulosTab2}
                             </div>
                         </div>
 
-                        <div id="content-${item.idHecho}-3" class="tab-content-${item.idHecho} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs flex flex-col justify-center">
+                        <div id="content-${rowKey}-3" class="tab-content-${rowKey} hidden bg-slate-900/40 p-3 rounded border border-slate-900/60 text-xs flex flex-col justify-center">
                             <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Planilla Policial</h5>
                             <div class="p-3 bg-slate-950/80 rounded border border-slate-800 inline-flex items-center gap-2 w-full md:w-auto self-start">
                                 <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
@@ -779,7 +874,7 @@
                             </div>
                         </div>
 
-                        <div id="content-${item.idHecho}-4" class="tab-content-${item.idHecho} hidden grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div id="content-${rowKey}-4" class="tab-content-${rowKey} hidden grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                             <div class="bg-slate-900/40 p-3 rounded border border-slate-900/60 space-y-1.5">
                                 <h5 class="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 text-sky-400">Representación Discursiva</h5>
                                 <div><span class="text-slate-500">Portada (Tapa):</span> <span class="text-slate-200 font-bold">${item.tapa}</span></div>
@@ -930,12 +1025,296 @@
             const filtered = getFilteredData();
             renderCards(filtered);
             updateCharts(filtered);
+            syncMapFiltersFromMaster();
+            if (mapInitialized) renderMapLayer();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VISTA MAPA
+        // ═══════════════════════════════════════════════════════════════
+
+        const MAP_FILTER_IDS = [
+            'filter-cobertura', 'filter-year', 'filter-distrito', 'filter-barrio',
+            'filter-planilla-policial', 'filter-fuente-primaria', 'filter-fuente-secundaria',
+            'filter-antecedentes', 'filter-caracterizacion', 'filter-recurrencia',
+            'filter-val-victima', 'filter-val-hecho', 'filter-tono', 'filter-dramatizacion',
+            'filter-extension', 'filter-tapa'
+        ];
+
+        const MAP_POINT_COLOR = '#38bdf8';
+
+        let leafletMap = null;
+        let markerClusterLayer = null;
+        let heatLayerObj = null;
+        let mapInitialized = false;
+        let mapViewMode = 'puntos';
+
+        function switchView(view) {
+            const artBtn = document.getElementById('view-btn-articulos');
+            const mapBtn = document.getElementById('view-btn-mapa');
+            const artView = document.getElementById('view-articulos');
+            const mapView = document.getElementById('view-mapa');
+
+            if (view === 'mapa') {
+                artView.classList.add('hidden');
+                mapView.classList.remove('hidden');
+                mapView.classList.add('flex');
+                mapBtn.classList.add('bg-sky-950', 'text-sky-400');
+                mapBtn.classList.remove('text-slate-400');
+                artBtn.classList.remove('bg-sky-950', 'text-sky-400');
+                artBtn.classList.add('text-slate-400');
+
+                if (!mapInitialized) {
+                    initLeafletMap();
+                } else {
+                    setTimeout(() => leafletMap.invalidateSize(), 50);
+                    renderMapLayer();
+                }
+            } else {
+                mapView.classList.add('hidden');
+                mapView.classList.remove('flex');
+                artView.classList.remove('hidden');
+                artBtn.classList.add('bg-sky-950', 'text-sky-400');
+                artBtn.classList.remove('text-slate-400');
+                mapBtn.classList.remove('bg-sky-950', 'text-sky-400');
+                mapBtn.classList.add('text-slate-400');
+            }
+        }
+
+        let mapInitialBounds = null;
+        let mapBaseLayers = {};
+        let mapCurrentBaseLayer = null;
+
+        function buildBaseLayers() {
+            mapBaseLayers = {
+                oscuro: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+                }),
+                claro: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+                }),
+                satelital: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri', maxZoom: 19
+                }),
+                topografico: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap', maxZoom: 17
+                })
+            };
+        }
+
+        function onMapBaseLayerChange() {
+            const key = document.getElementById('map-base-layer').value;
+            if (mapCurrentBaseLayer) leafletMap.removeLayer(mapCurrentBaseLayer);
+            mapCurrentBaseLayer = mapBaseLayers[key];
+            mapCurrentBaseLayer.addTo(leafletMap);
+            mapCurrentBaseLayer.bringToBack();
+        }
+
+        function resetMapView() {
+            if (mapInitialBounds) {
+                leafletMap.fitBounds(mapInitialBounds, { padding: [60, 60], maxZoom: 14 });
+            }
+        }
+
+        const ResetViewControl = L.Control.extend({
+            options: { position: 'topright' },
+            onAdd: function () {
+                const btn = L.DomUtil.create('button', 'leaflet-bar map-reset-btn');
+                btn.innerHTML = '⟲';
+                btn.title = 'Volver a vista inicial';
+                btn.type = 'button';
+                L.DomEvent.disableClickPropagation(btn);
+                L.DomEvent.on(btn, 'click', resetMapView);
+                return btn;
+            }
+        });
+
+        function initLeafletMap() {
+            leafletMap = L.map('leaflet-map', { zoomControl: false });
+
+            // Zoom control y botón de reset a la derecha, para no chocar con el panel flotante (izquierda)
+            L.control.zoom({ position: 'topright' }).addTo(leafletMap);
+            new ResetViewControl().addTo(leafletMap);
+
+            buildBaseLayers();
+            mapCurrentBaseLayer = mapBaseLayers.oscuro;
+            mapCurrentBaseLayer.addTo(leafletMap);
+
+            markerClusterLayer = L.markerClusterGroup({
+                maxClusterRadius: 45,
+                spiderfyOnMaxZoom: true,
+                iconCreateFunction: function (cluster) {
+                    const count = cluster.getChildCount();
+                    const size = count < 10 ? 32 : count < 25 ? 40 : 48;
+                    return L.divIcon({
+                        html: `<div style="width:${size}px;height:${size}px;">${count}</div>`,
+                        className: 'marker-cluster-case',
+                        iconSize: L.point(size, size)
+                    });
+                }
+            });
+
+            // Encuadre inicial: que entren TODOS los casos del corpus (no solo los filtrados),
+            // con padding generoso para que los círculos/clusters no queden cortados en el borde.
+            const allCoords = rawData.filter(r => r.lat != null && r.lng != null).map(r => [r.lat, r.lng]);
+            if (allCoords.length > 0) {
+                mapInitialBounds = L.latLngBounds(allCoords);
+                leafletMap.fitBounds(mapInitialBounds, { padding: [60, 60], maxZoom: 14 });
+            } else {
+                leafletMap.setView([-31.632, -60.703], 12.5);
+            }
+
+            mapInitialized = true;
+            setTimeout(() => leafletMap.invalidateSize(), 50);
+            renderMapLayer();
+        }
+
+        function setMapViewMode(mode) {
+            mapViewMode = mode;
+            const puntosBtn = document.getElementById('map-mode-btn-puntos');
+            const calorBtn = document.getElementById('map-mode-btn-calor');
+            if (mode === 'puntos') {
+                puntosBtn.classList.add('bg-sky-950', 'text-sky-400'); puntosBtn.classList.remove('text-slate-400');
+                calorBtn.classList.remove('bg-sky-950', 'text-sky-400'); calorBtn.classList.add('text-slate-400');
+            } else {
+                calorBtn.classList.add('bg-sky-950', 'text-sky-400'); calorBtn.classList.remove('text-slate-400');
+                puntosBtn.classList.remove('bg-sky-950', 'text-sky-400'); puntosBtn.classList.add('text-slate-400');
+            }
+            renderMapLayer();
+        }
+
+        // Agrupa las filas filtradas (hecho+artículo) en puntos por hecho (una coordenada por hecho)
+        function getMapPoints() {
+            const filteredRows = getFilteredData();
+            const byHecho = {};
+            filteredRows.forEach(r => {
+                if (!byHecho[r.idHecho]) byHecho[r.idHecho] = [];
+                byHecho[r.idHecho].push(r);
+            });
+
+            const points = [];
+            Object.values(byHecho).forEach(rowsDelHecho => {
+                const base = rowsDelHecho[0];
+                if (base.lat == null || base.lng == null) return; // sin coordenadas cargadas
+                points.push({ hecho: base, rows: rowsDelHecho });
+            });
+            return points;
+        }
+
+        function buildPopupHtml(point) {
+            const h = point.hecho;
+            const isSC = h.titulo === 'Sin Cobertura';
+            let articulosHtml = '';
+            if (isSC) {
+                articulosHtml = `<p class="text-[11px] text-slate-500 italic mt-1.5">Sin cobertura periodística registrada.</p>`;
+            } else {
+                point.rows.forEach(art => {
+                    articulosHtml += `
+                        <div class="border-t border-slate-800 pt-1.5 mt-1.5 text-[11px]">
+                            <div class="flex justify-between gap-2">
+                                <span class="font-mono text-sky-400">${art.idArticulo}</span>
+                                <span class="text-slate-500">${art.fechaArticulo}</span>
+                            </div>
+                            <p class="text-slate-200 font-semibold">"${art.titulo}"</p>
+                            <p class="text-slate-400">${art.medio}${art.referencia && art.referencia !== 'S/C' ? ` — <a href="${art.referencia}" target="_blank" class="text-sky-400 hover:underline">ver ↗</a>` : ''}</p>
+                        </div>`;
+                });
+            }
+            return `
+                <div class="text-xs min-w-[220px] max-w-[280px]">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-mono font-bold text-sky-400 bg-sky-950/60 border border-sky-800/60 px-1.5 py-0.5 rounded text-[10px]">${h.idHecho}</span>
+                        <span class="text-slate-500 text-[10px]">${h.fecha}</span>
+                    </div>
+                    <p class="font-bold text-slate-100">${h.victima} <span class="font-normal text-slate-400">(${h.edad} años)</span></p>
+                    <p class="text-slate-400 mt-0.5">${h.barrio} · ${h.distrito} · ${h.arma}</p>
+                    ${point.rows.length > 1 ? `<p class="text-amber-400 text-[10px] mt-1">${point.rows.length} artículos vinculados a este hecho</p>` : ''}
+                    ${articulosHtml}
+                </div>`;
+        }
+
+        function renderMapLayer() {
+            if (!mapInitialized) return;
+
+            if (markerClusterLayer && leafletMap.hasLayer(markerClusterLayer)) leafletMap.removeLayer(markerClusterLayer);
+            if (heatLayerObj && leafletMap.hasLayer(heatLayerObj)) leafletMap.removeLayer(heatLayerObj);
+            markerClusterLayer.clearLayers();
+
+            const points = getMapPoints();
+            document.getElementById('map-visible-count').textContent = points.length;
+
+            if (points.length === 0) return;
+
+            if (mapViewMode === 'puntos') {
+                points.forEach(point => {
+                    const icon = L.divIcon({
+                        className: '',
+                        html: `<div class="case-marker-dot" style="width:16px;height:16px;background:${MAP_POINT_COLOR};"></div>`,
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    });
+                    const marker = L.marker([point.hecho.lat, point.hecho.lng], { icon });
+                    marker.bindPopup(buildPopupHtml(point));
+                    markerClusterLayer.addLayer(marker);
+                });
+                leafletMap.addLayer(markerClusterLayer);
+            } else {
+                const latlngs = points.map(p => [p.hecho.lat, p.hecho.lng, 0.6]);
+                heatLayerObj = L.heatLayer(latlngs, { radius: 28, blur: 22, maxZoom: 16, minOpacity: 0.35 });
+                leafletMap.addLayer(heatLayerObj);
+            }
+        }
+
+        // ---- filtros espejo del mapa (mismo estado que el sidebar) ----
+        function initMapFiltersMirror() {
+            const wrap = document.getElementById('map-filters-mirror');
+            wrap.innerHTML = '';
+            MAP_FILTER_IDS.forEach(id => {
+                const master = document.getElementById(id);
+                if (!master) return;
+                const label = master.previousElementSibling && master.previousElementSibling.tagName === 'LABEL'
+                    ? master.previousElementSibling.textContent : id;
+
+                const block = document.createElement('div');
+                const lbl = document.createElement('label');
+                lbl.className = 'block text-[10px] font-semibold text-slate-400 mb-1';
+                lbl.textContent = label;
+
+                const clone = master.cloneNode(true);
+                clone.id = id + '-map';
+                clone.removeAttribute('onchange');
+                clone.className = 'w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-sky-500';
+                clone.addEventListener('change', () => {
+                    master.value = clone.value;
+                    applyFilters();
+                });
+
+                block.appendChild(lbl);
+                block.appendChild(clone);
+                wrap.appendChild(block);
+            });
+        }
+
+        function syncMapFiltersFromMaster() {
+            MAP_FILTER_IDS.forEach(id => {
+                const master = document.getElementById(id);
+                const mirror = document.getElementById(id + '-map');
+                if (master && mirror && mirror.value !== master.value) mirror.value = master.value;
+            });
+        }
+
+        function toggleMapFiltersPanel() {
+            const body = document.getElementById('map-filters-body');
+            const caret = document.getElementById('map-filters-caret');
+            body.classList.toggle('hidden');
+            caret.textContent = body.classList.contains('hidden') ? '▸' : '▾';
         }
 
         window.onload = () => {
             const issues = validateData();
             showValidationPanel(issues);
             populateSelectors();
+            initMapFiltersMirror();
             applyFilters();
         };
     </script>
